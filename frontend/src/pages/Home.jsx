@@ -27,7 +27,8 @@ const [error, setError] = useState(null);
   useEffect(() => {
   const fetchEvents = async () => {
     try {
-      const response = await axios.get('/api/events/popular');
+      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/events/popular`);
+
       setEvents(response.data);
     } catch (error) {
       setError("Failed to fetch events.");
