@@ -28,11 +28,11 @@ const AdminDashboard = () => {
   const user = useSelector((state) => state.user.user);
   const navigate = useNavigate();
   const [stats, setStats] = useState({});
+  const [vendorStats, setVendorStats] = useState({});
   const [recentUsers, setRecentUsers] = useState([]);
   const [pendingEvents, setPendingEvents] = useState([]);
   const [revenueData, setRevenueData] = useState([]);
   const [activityData, setActivityData] = useState([]);
-  const [vendorStats, setVendorStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [processingEvent, setProcessingEvent] = useState(null);
@@ -269,14 +269,14 @@ const AdminDashboard = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
           whileHover={{ y: -2 }}
         >
-          <Card className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 hover:shadow-lg transition-all duration-300 min-h-[152px] flex flex-col justify-between">
+          <Card className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 hover:shadow-lg transition-all duration-300">
             <div className="flex items-center">
               <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-md">
                 <UsersIcon className="w-6 h-6 text-white" />
@@ -284,28 +284,24 @@ const AdminDashboard = () => {
               <div className="ml-4">
                 <p className="text-sm font-medium text-blue-800">Total Users</p>
                 <p className="text-2xl font-bold text-blue-900">{stats.totalUsers?.toLocaleString() || 0}</p>
-                <div className="min-h-[24px] flex items-center">
-                  {stats.newUsersThisMonth > 0 ? (
-                    <p className="text-xs text-blue-600 flex items-center">
-                      <span className="inline-block w-1 h-1 bg-green-400 rounded-full mr-1"></span>
-                      +{stats.newUsersThisMonth} this month
-                    </p>
-                  ) : (
-                    <span className="invisible">placeholder</span>
-                  )}
-                </div>
+                {stats.newUsersThisMonth > 0 && (
+                  <p className="text-xs text-blue-600 flex items-center">
+                    <span className="inline-block w-1 h-1 bg-green-400 rounded-full mr-1"></span>
+                    +{stats.newUsersThisMonth} this month
+                  </p>
+                )}
               </div>
             </div>
           </Card>
         </motion.div>
-        
+          
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
           whileHover={{ y: -2 }}
         >
-          <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 border-green-200 hover:shadow-lg transition-all duration-300 min-h-[152px] flex flex-col justify-between">
+          <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 border-green-200 hover:shadow-lg transition-all duration-300">
             <div className="flex items-center">
               <div className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-md">
                 <CalendarIcon className="w-6 h-6 text-white" />
@@ -313,26 +309,28 @@ const AdminDashboard = () => {
               <div className="ml-4">
                 <p className="text-sm font-medium text-green-800">Total Events</p>
                 <p className="text-2xl font-bold text-green-900">{stats.totalEvents?.toLocaleString() || 0}</p>
-                <div className="flex items-center space-x-2 mt-1 min-h-[24px]">
+                <div className="flex items-center space-x-2 mt-1">
                   <p className="text-xs text-green-600">
                     {stats.pendingEvents || 0} pending review
                   </p>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 animate-pulse ${stats.pendingEvents > 0 ? '' : 'invisible'}`}>
-                    Action Required
-                  </span>
+                  {stats.pendingEvents > 0 && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 animate-pulse">
+                      Action Required
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
           </Card>
         </motion.div>
-        
+          
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
           whileHover={{ y: -2 }}
         >
-          <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 hover:shadow-lg transition-all duration-300 min-h-[152px] flex flex-col justify-between">
+          <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 hover:shadow-lg transition-all duration-300">
             <div className="flex items-center">
               <div className="p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-md">
                 <CurrencyDollarIcon className="w-6 h-6 text-white" />
@@ -340,24 +338,22 @@ const AdminDashboard = () => {
               <div className="ml-4">
                 <p className="text-sm font-medium text-purple-800">Platform Revenue</p>
                 <p className="text-2xl font-bold text-purple-900">{formatCurrency(stats.totalRevenue || 0)}</p>
-                <div className="min-h-[24px] flex items-center">
-                  <p className="text-xs text-purple-600 flex items-center">
-                    <span className="inline-block w-1 h-1 bg-green-400 rounded-full mr-1"></span>
-                    10% commission rate
-                  </p>
-                </div>
+                <p className="text-xs text-purple-600 flex items-center">
+                  <span className="inline-block w-1 h-1 bg-green-400 rounded-full mr-1"></span>
+                  10% commission rate
+                </p>
               </div>
             </div>
           </Card>
         </motion.div>
-        
+          
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
           whileHover={{ y: -2 }}
         >
-          <Card className="p-6 bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 hover:shadow-lg transition-all duration-300 min-h-[152px] flex flex-col justify-between">
+          <Card className="p-6 bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 hover:shadow-lg transition-all duration-300">
             <div className="flex items-center">
               <div className="p-3 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-md">
                 <ExclamationTriangleIcon className="w-6 h-6 text-white" />
@@ -365,24 +361,25 @@ const AdminDashboard = () => {
               <div className="ml-4">
                 <p className="text-sm font-medium text-orange-800">Active Events</p>
                 <p className="text-2xl font-bold text-orange-900">{stats.activeEvents?.toLocaleString() || 0}</p>
-                <div className="min-h-[24px] flex items-center">
-                  <p className="text-xs text-orange-600 flex items-center">
-                    <span className="inline-block w-1 h-1 bg-green-400 rounded-full mr-1 animate-pulse"></span>
-                    Currently running
-                  </p>
-                </div>
+                <p className="text-xs text-orange-600 flex items-center">
+                  <span className="inline-block w-1 h-1 bg-green-400 rounded-full mr-1 animate-pulse"></span>
+                  Currently running
+                </p>
               </div>
             </div>
           </Card>
         </motion.div>
-        
+      </div>
+
+      {/* Additional Stats Row for Vendors */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
           whileHover={{ y: -2 }}
         >
-          <Card className="p-6 bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200 hover:shadow-lg transition-all duration-300 min-h-[152px] flex flex-col justify-between">
+          <Card className="p-6 bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200 hover:shadow-lg transition-all duration-300">
             <div className="flex items-center">
               <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl shadow-md">
                 <BuildingOfficeIcon className="w-6 h-6 text-white" />
@@ -390,12 +387,10 @@ const AdminDashboard = () => {
               <div className="ml-4">
                 <p className="text-sm font-medium text-indigo-800">Total Vendors</p>
                 <p className="text-2xl font-bold text-indigo-900">{vendorStats.totalVendors?.toLocaleString() || 0}</p>
-                <div className="min-h-[24px] flex items-center">
-                  <p className="text-xs text-indigo-600 flex items-center">
-                    <span className="inline-block w-1 h-1 bg-green-400 rounded-full mr-1"></span>
-                    {vendorStats.categories || 0} categories
-                  </p>
-                </div>
+                <p className="text-xs text-indigo-600 flex items-center">
+                  <span className="inline-block w-1 h-1 bg-green-400 rounded-full mr-1"></span>
+                  {vendorStats.categories || 0} categories
+                </p>
               </div>
             </div>
           </Card>
@@ -408,7 +403,7 @@ const AdminDashboard = () => {
           <span className="mr-2">🚀</span>
           Quick Actions
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -481,15 +476,15 @@ const AdminDashboard = () => {
             transition={{ delay: 0.8 }}
             whileHover={{ scale: 1.02 }}
           >
-            <Card className="p-4 hover:shadow-lg transition-all duration-300 cursor-pointer bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
-              <Link to="/admin/vendors" className="block">
+            <Card className="p-4 hover:shadow-lg transition-all duration-300 cursor-pointer bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+              <Link to="/admin/settings" className="block">
                 <div className="flex items-center">
-                  <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl shadow-md">
-                    <BuildingOfficeIcon className="w-6 h-6 text-white" />
+                  <div className="p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-md">
+                    <CogIcon className="w-6 h-6 text-white" />
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-indigo-900">Vendor Management</p>
-                    <p className="text-xs text-indigo-700">Manage vendors 🏢</p>
+                    <p className="text-sm font-medium text-purple-900">System Settings</p>
+                    <p className="text-xs text-purple-700">Configure platform ⚙️</p>
                   </div>
                 </div>
               </Link>
@@ -502,15 +497,15 @@ const AdminDashboard = () => {
             transition={{ delay: 0.9 }}
             whileHover={{ scale: 1.02 }}
           >
-            <Card className="p-4 hover:shadow-lg transition-all duration-300 cursor-pointer bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
-              <Link to="/admin/settings" className="block">
+            <Card className="p-4 hover:shadow-lg transition-all duration-300 cursor-pointer bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
+              <Link to="/admin/vendors" className="block">
                 <div className="flex items-center">
-                  <div className="p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-md">
-                    <CogIcon className="w-6 h-6 text-white" />
+                  <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl shadow-md">
+                    <BuildingOfficeIcon className="w-6 h-6 text-white" />
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-purple-900">System Settings</p>
-                    <p className="text-xs text-purple-700">Configure platform ⚙️</p>
+                    <p className="text-sm font-medium text-indigo-900">Vendor Management</p>
+                    <p className="text-xs text-indigo-700">Manage vendors 🏢</p>
                   </div>
                 </div>
               </Link>
@@ -590,7 +585,7 @@ const AdminDashboard = () => {
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="flex-1 bg-red-600 hover:bg-red-700 text-white border-red-600 !flex"
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white border-red-600"
                     onClick={() => handleRejectClick(event)}
                     disabled={processingEvent === event._id}
                   >
