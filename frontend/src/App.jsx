@@ -35,15 +35,14 @@ import OrganizerDashboard from './pages/OrganizerDashboard';
 import CreateEvent from './pages/CreateEvent';
 import EventManagement from './pages/EventManagement';
 import VendorManagement from './pages/VendorManagement';
-import OrganizerVendorBrowse from './pages/OrganizerVendorBrowse';
 
 // Admin Pages
 import AdminDashboard from './pages/AdminDashboard';
+import AdminVendorManagement from './pages/AdminVendorManagement';
 import UserManagement from './pages/UserManagement';
 import UserManagementTest from './pages/UserManagementTest';
 import EventModeration from './pages/EventModeration';
 import ReportsFeedback from './pages/ReportsFeedback';
-import AdminVendorManagement from './pages/AdminVendorManagement';
 
 const App = () => {
   const user = useSelector((state) => state.user.user);
@@ -218,7 +217,7 @@ const App = () => {
             } />
             <Route path="/organizer/vendors" element={
               <ProtectedRoute requiredRoles={['organizer', 'admin']}>
-                <OrganizerVendorBrowse />
+                <VendorManagement />
               </ProtectedRoute>
             } />
 
@@ -243,14 +242,14 @@ const App = () => {
                 <ReportsFeedback />
               </ProtectedRoute>
             } />
-            <Route path="/admin/settings" element={
-              <ProtectedRoute requiredRoles={['admin']}>
-                <Settings />
-              </ProtectedRoute>
-            } />
             <Route path="/admin/vendors" element={
               <ProtectedRoute requiredRoles={['admin']}>
                 <AdminVendorManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/settings" element={
+              <ProtectedRoute requiredRoles={['admin']}>
+                <Settings />
               </ProtectedRoute>
             } />
 
