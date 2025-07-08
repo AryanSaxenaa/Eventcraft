@@ -142,6 +142,20 @@ const EventSchema = new mongoose.Schema(
         },
       },
     ],
+    vendors: [
+      {
+        vendor: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Vendor',
+        },
+        services: [String],
+        cost: {
+          type: Number,
+          default: 0,
+        },
+        notes: String,
+      },
+    ],
   },
   {
     timestamps: true,

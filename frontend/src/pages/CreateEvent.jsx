@@ -13,11 +13,16 @@ import {
   TrashIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
-  CheckIcon
+  CheckIcon,
+  BuildingOfficeIcon,
+  StarIcon,
+  PhoneIcon,
+  GlobeAltIcon
 } from '@heroicons/react/24/outline';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { eventService } from '../services/eventService';
+import vendorService from '../services/vendorService';
 import { useNotification } from '../components/NotificationContext';
 
 const CreateEvent = () => {
@@ -29,6 +34,8 @@ const CreateEvent = () => {
   const isEditing = !!editEventId;
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [vendors, setVendors] = useState([]);
+  const [selectedVendors, setSelectedVendors] = useState([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -49,7 +56,8 @@ const CreateEvent = () => {
         quantity: 100
       }
     ],
-    image: ''
+    image: '',
+    vendors: []
   });
 
   // Load event data for editing
@@ -58,6 +66,21 @@ const CreateEvent = () => {
       loadEventForEditing(editEventId);
     }
   }, [isEditing, editEventId]);
+
+  // Load vendors when component mounts
+  useEffect(() => {
+    fetchVendors();
+  }, []);
+
+  const fetchVendors = async () => {
+    try {
+      const data = await vendorService.getAllVendors();
+      setVendors(data);
+    } catch (err) {
+      console.error('Error fetching vendors:', err);
+      error('Failed to load vendors');
+    }
+  };
 
   const loadEventForEditing = async (eventId) => {
     try {
@@ -98,7 +121,8 @@ const CreateEvent = () => {
               description: 'Standard event admission',
               quantity: event.capacity || 100
             }],
-        image: event.image || ''
+        image: event.image || '',
+        vendors: event.vendors || []
       });
     } catch (err) {
       console.error('Error loading event for editing:', err);
@@ -175,6 +199,36 @@ const CreateEvent = () => {
     }));
   };
 
+  const toggleVendorSelection = (vendor) => {
+    setSelectedVendors(prev => {
+      const isSelected = prev.find(v => v._id === vendor._id);
+      if (isSelected) {
+        return prev.filter(v => v._id !== vendor._id);
+      } else {
+        return [...prev, vendor];
+      }
+    });
+  };
+
+  const addVendorToEvent = (vendor, services = [], cost = 0, notes = '') => {
+    setFormData(prev => ({
+      ...prev,
+      vendors: [...prev.vendors, {
+        vendor: vendor._id,
+        services,
+        cost,
+        notes
+      }]
+    }));
+  };
+
+  const removeVendorFromEvent = (vendorId) => {
+    setFormData(prev => ({
+      ...prev,
+      vendors: prev.vendors.filter(v => v.vendor !== vendorId)
+    }));
+  };
+
   const validateStep = () => {
     const newErrors = {};
     
@@ -237,7 +291,8 @@ const CreateEvent = () => {
     { id: 1, title: 'Basic Info', icon: CalendarIcon },
     { id: 2, title: 'Location & Category', icon: MapPinIcon },
     { id: 3, title: 'Capacity & Pricing', icon: CurrencyDollarIcon },
-    { id: 4, title: 'Review & Submit', icon: CheckIcon }
+    { id: 4, title: 'Vendor Selection', icon: BuildingOfficeIcon },
+    { id: 5, title: 'Review & Submit', icon: CheckIcon }
   ];
 
   return (
@@ -600,8 +655,162 @@ const CreateEvent = () => {
                 </div>
               )}
 
-              {/* Step 4: Review & Submit */}
+              {/* Step 4: Vendor Selection */}
               {step === 4 && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Vendors for Your Event</h3>
+                    <p className="text-gray-600 mb-6">
+                      Choose vendors to provide services for your event. You can select multiple vendors from different categories.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {vendors.map((vendor) => {
+                      const isSelected = selectedVendors.find(v => v._id === vendor._id);
+                      const isAdded = formData.vendors.find(v => v.vendor === vendor._id);
+                      
+                      return (
+                        <div
+                          key={vendor._id}
+                          className={`p-4 border rounded-lg cursor-pointer transition-all duration-200 ${
+                            isSelected 
+                              ? 'border-indigo-500 bg-indigo-50' 
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                          onClick={() => toggleVendorSelection(vendor)}
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center">
+                              <BuildingOfficeIcon className="w-5 h-5 text-indigo-600 mr-2" />
+                              <div>
+                                <h4 className="font-medium text-gray-900">{vendor.name}</h4>
+                                <p className="text-sm text-gray-500">{vendor.category}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center">
+                              <StarIcon className="w-4 h-4 text-yellow-400 mr-1" />
+                              <span className="text-sm text-gray-600">{vendor.rating || 0}/5</span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 mb-3">
+                            <div className="flex items-center text-sm text-gray-600">
+                              <PhoneIcon className="w-4 h-4 mr-2" />
+                              <span className="truncate">{vendor.contact}</span>
+                            </div>
+                            {vendor.website && (
+                              <div className="flex items-center text-sm text-gray-600">
+                                <GlobeAltIcon className="w-4 h-4 mr-2" />
+                                <span className="truncate">{vendor.website}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {vendor.description && (
+                            <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                              {vendor.description}
+                            </p>
+                          )}
+
+                          {vendor.services && vendor.services.length > 0 && (
+                            <div className="mb-3">
+                              <p className="text-xs font-medium text-gray-700 mb-1">Services:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {vendor.services.slice(0, 3).map((service, index) => (
+                                  <span
+                                    key={index}
+                                    className="px-2 py-1 bg-indigo-100 text-indigo-800 text-xs rounded-full"
+                                  >
+                                    {service}
+                                  </span>
+                                ))}
+                                {vendor.services.length > 3 && (
+                                  <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                    +{vendor.services.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              vendor.isActive 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {vendor.isActive ? 'Available' : 'Unavailable'}
+                            </span>
+                            {isSelected && (
+                              <span className="text-indigo-600 text-sm font-medium">
+                                Selected
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {selectedVendors.length > 0 && (
+                    <div className="bg-indigo-50 p-4 rounded-lg">
+                      <h4 className="font-medium text-indigo-900 mb-3">
+                        Selected Vendors ({selectedVendors.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {selectedVendors.map((vendor) => (
+                          <div key={vendor._id} className="flex items-center justify-between p-2 bg-white rounded">
+                            <div>
+                              <p className="font-medium text-gray-900">{vendor.name}</p>
+                              <p className="text-sm text-gray-500">{vendor.category}</p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => addVendorToEvent(vendor)}
+                            >
+                              Add to Event
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {formData.vendors.length > 0 && (
+                    <div className="bg-green-50 p-4 rounded-lg">
+                      <h4 className="font-medium text-green-900 mb-3">
+                        Vendors Added to Event ({formData.vendors.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {formData.vendors.map((vendorData, index) => {
+                          const vendor = vendors.find(v => v._id === vendorData.vendor);
+                          return (
+                            <div key={index} className="flex items-center justify-between p-2 bg-white rounded">
+                              <div>
+                                <p className="font-medium text-gray-900">{vendor?.name || 'Unknown Vendor'}</p>
+                                <p className="text-sm text-gray-500">{vendor?.category || 'Unknown Category'}</p>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => removeVendorFromEvent(vendorData.vendor)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 5: Review & Submit */}
+              {step === 5 && (
                 <div className="space-y-6">
                   <div className="bg-gray-50 p-6 rounded-lg">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Event Summary</h3>
@@ -643,6 +852,32 @@ const CreateEvent = () => {
                                 {tag}
                               </span>
                             ))}
+                          </div>
+                        </div>
+                      )}
+                      {formData.vendors.length > 0 && (
+                        <div className="md:col-span-2">
+                          <p className="font-medium text-gray-700">Selected Vendors</p>
+                          <div className="space-y-2 mt-1">
+                            {formData.vendors.map((vendorData, index) => {
+                              const vendor = vendors.find(v => v._id === vendorData.vendor);
+                              return (
+                                <div key={index} className="p-2 bg-indigo-50 rounded">
+                                  <p className="font-medium text-indigo-900">{vendor?.name || 'Unknown Vendor'}</p>
+                                  <p className="text-sm text-indigo-700">{vendor?.category || 'Unknown Category'}</p>
+                                  {vendorData.services && vendorData.services.length > 0 && (
+                                    <p className="text-xs text-indigo-600">
+                                      Services: {vendorData.services.join(', ')}
+                                    </p>
+                                  )}
+                                  {vendorData.cost > 0 && (
+                                    <p className="text-xs text-indigo-600">
+                                      Cost: ${vendorData.cost}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -689,7 +924,7 @@ const CreateEvent = () => {
             </div>
             
             <div className="flex space-x-3">
-              {step < 4 && (
+              {step < 5 && (
                 <Button
                   type="button"
                   variant="primary"
@@ -701,7 +936,7 @@ const CreateEvent = () => {
                 </Button>
               )}
               
-              {step === 4 && (
+              {step === 5 && (
                 <Button
                   type="submit"
                   variant="primary"

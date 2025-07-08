@@ -19,7 +19,8 @@ import {
   DocumentTextIcon,
   TicketIcon,
   StarIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  BuildingOfficeIcon
 } from '@heroicons/react/24/outline';
 import { 
   CalendarIcon as CalendarSolidIcon,
@@ -159,7 +160,14 @@ const OrganizerDashboard = () => {
                 </Button>
               </Link>
               
-              <Button variant="secondary" className="flex items-center space-x-2">
+              <Link to="/organizer/vendors">
+                <Button variant="secondary" className="flex items-center space-x-2">
+                  <BuildingOfficeIcon className="w-5 h-5" />
+                  <span>Browse Vendors</span>
+                </Button>
+              </Link>
+              
+              <Button variant="outline" className="flex items-center space-x-2">
                 <CogIcon className="w-5 h-5" />
                 <span>Settings</span>
               </Button>

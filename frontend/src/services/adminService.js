@@ -1,7 +1,7 @@
 import api from './api';
 import authService from './authService';
 import { mockEvents } from './eventService';
-import { mockVendors } from './vendorService';
+import vendorService from './vendorService';
 
 // Mock data for admin dashboard
 const mockAdminData = {

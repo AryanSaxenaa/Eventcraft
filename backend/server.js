@@ -54,6 +54,7 @@ app.use('/api/events', require('./routes/event.routes'));
 app.use('/api/tickets', require('./routes/ticket.routes'));
 app.use('/api/admin', require('./routes/admin.routes'));
 app.use('/api/notifications', require('./routes/notification.routes'));
+app.use('/api/vendors', require('./routes/vendor.routes'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
