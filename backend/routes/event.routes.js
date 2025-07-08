@@ -6,6 +6,7 @@ const Ticket = require('../models/Ticket');
 const User = require('../models/User');
 const emailService = require('../services/emailService');
 const smsService = require('../services/smsService');
+const notificationService = require('../services/notificationService');
 
 // Public event routes
 router.get('/', async (req, res) => {
@@ -80,33 +81,6 @@ router.get('/upcoming', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-
-// Get popular events based on attendees
-router.get('/popular', async (req, res) => {
-  try {
-    const events = await Event.find({
-      approvalStatus: 'approved',
-      status: 'published'
-    })
-      .sort({ 'attendees.length': -1 }) // fallback if attendanceCount not present
-      .limit(4)
-      .populate('organizer', 'name email');
-
-    // Optional: sort manually if attendanceCount is not a separate field
-    const sorted = events
-      .map(event => ({
-        ...event._doc,
-        popularityScore: event.attendees.length // or use attendanceCount if available
-      }))
-      .sort((a, b) => b.popularityScore - a.popularityScore);
-
-    res.json(sorted);
-  } catch (error) {
-    console.error('Error fetching popular events:', error);
-    res.status(500).json({ message: 'Failed to fetch popular events' });
-  }
-});
-
 
 // Get organizer's events
 router.get('/organizer', checkJwt, checkUser, authorize('organizer', 'admin'), async (req, res) => {
@@ -304,6 +278,23 @@ router.put('/:id', checkJwt, checkUser, authorize('organizer', 'admin'), async (
       { new: true }
     ).populate('organizer', 'name email');
     
+    // Send notification to all event attendees about the update
+    if (updatedEvent.attendees && updatedEvent.attendees.length > 0) {
+      const attendeeIds = updatedEvent.attendees.map(attendee => attendee.user);
+      
+      await notificationService.createBulkNotifications({
+        users: attendeeIds,
+        type: 'event_updated',
+        title: 'Event Updated',
+        message: `The event "${updatedEvent.title}" has been updated. Check the latest details.`,
+        data: {
+          eventId: updatedEvent._id,
+          updatedAt: new Date()
+        },
+        priority: 'medium'
+      });
+    }
+    
     res.json(updatedEvent);
   } catch (error) {
     console.error('Error updating event:', error);
@@ -323,6 +314,24 @@ router.delete('/:id', checkJwt, checkUser, authorize('organizer', 'admin'), asyn
     // Check if user is organizer or admin
     if (req.dbUser.role !== 'admin' && event.organizer.toString() !== req.dbUser._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to delete this event' });
+    }
+    
+    // Send notification to all event attendees about cancellation
+    if (event.attendees && event.attendees.length > 0) {
+      const attendeeIds = event.attendees.map(attendee => attendee.user);
+      
+      await notificationService.createBulkNotifications({
+        users: attendeeIds,
+        type: 'event_cancelled',
+        title: 'Event Cancelled',
+        message: `Unfortunately, the event "${event.title}" has been cancelled. We apologize for any inconvenience.`,
+        data: {
+          eventId: event._id,
+          eventTitle: event.title,
+          cancelledAt: new Date()
+        },
+        priority: 'high'
+      });
     }
     
     await Event.findByIdAndDelete(req.params.id);
@@ -421,7 +430,25 @@ router.put('/:eventId/approve', checkJwt, checkUser, authorize('admin'), async (
     await event.save();
     console.log('✅ Event status updated to approved/published');
     
-    // Send notifications to organizer
+    // Send notification via new notification service
+    try {
+      await notificationService.createNotification({
+        user: event.organizer._id,
+        type: 'event_approved',
+        title: 'Event Approved!',
+        message: `Your event "${event.title}" has been approved and is now published.`,
+        data: {
+          eventId: event._id,
+          approvedAt: event.approvedAt
+        },
+        priority: 'high'
+      });
+      console.log('✅ Approval notification created via notification service');
+    } catch (error) {
+      console.error('❌ Failed to create approval notification:', error);
+    }
+    
+    // Send notifications to organizer (legacy support)
     const organizer = event.organizer;
     
     if (organizer) {
@@ -507,7 +534,26 @@ router.put('/:eventId/reject', checkJwt, checkUser, authorize('admin'), async (r
     
     await event.save();
     
-    // Send rejection notification to organizer
+    // Send notification via new notification service
+    try {
+      await notificationService.createNotification({
+        user: event.organizer._id,
+        type: 'event_rejected',
+        title: 'Event Rejected',
+        message: `Your event "${event.title}" has been rejected. ${reason ? `Reason: ${reason}` : 'Please review and resubmit.'}`,
+        data: {
+          eventId: event._id,
+          rejectedAt: event.rejectedAt,
+          reason: reason || null
+        },
+        priority: 'high'
+      });
+      console.log('✅ Rejection notification created via notification service');
+    } catch (error) {
+      console.error('❌ Failed to create rejection notification:', error);
+    }
+    
+    // Send rejection notification to organizer (legacy support)
     const organizer = event.organizer;
     
     if (organizer && organizer.preferences?.notifications?.email !== false) {
@@ -557,45 +603,98 @@ router.post('/:id/register', checkJwt, checkUser, async (req, res) => {
       return res.status(400).json({ message: 'Event is not available for registration' });
     }
     
-    // Check if user is already registered
-    const existingTicket = await Ticket.findOne({
-      event: eventId,
-      user: req.dbUser._id
-    });
+    // Allow multiple ticket purchases - remove the restriction
+    // Users can buy multiple tickets for the same event
+    console.log(`✅ Allowing multiple ticket purchase for user ${req.dbUser.email}`);
     
-    if (existingTicket) {
-      return res.status(400).json({ message: 'You are already registered for this event' });
-    }
+    // Check capacity using actual ticket count
+    const existingTicketsCount = await Ticket.countDocuments({ event: eventId });
+    console.log(`🎫 Current tickets sold: ${existingTicketsCount}`);
+    console.log(`🏢 Event capacity: ${event.capacity}`);
+    console.log(`📊 Requested quantity: ${quantity}`);
     
-    // Check capacity
-    const totalAttendees = event.attendees.length;
-    if (totalAttendees + quantity > event.capacity) {
-      return res.status(400).json({ message: 'Event is at full capacity' });
+    if (existingTicketsCount + quantity > event.capacity) {
+      return res.status(400).json({ 
+        message: `Event is at full capacity. ${event.capacity - existingTicketsCount} tickets remaining.`,
+        available: event.capacity - existingTicketsCount,
+        requested: quantity
+      });
     }
     
     console.log(`✅ Creating tickets for user ${req.dbUser.email}`);
     
-    // Create ticket(s)
+    // Find the correct ticket type and price
+    const selectedTicketType = ticketType || 'General Admission';
+    let ticketPrice = 0;
+    
+    // Try to find price from ticketTypes array first
+    if (event.ticketTypes && event.ticketTypes.length > 0) {
+      const foundTicketType = event.ticketTypes.find(tt => tt.name === selectedTicketType);
+      if (foundTicketType) {
+        ticketPrice = foundTicketType.price || 0;
+        console.log(`💰 Found ticket type "${selectedTicketType}" with price: $${ticketPrice}`);
+      } else {
+        // Use the first ticket type as default
+        ticketPrice = event.ticketTypes[0].price || 0;
+        console.log(`💰 Using default ticket type with price: $${ticketPrice}`);
+      }
+    } else {
+      // Fallback to event.ticketPrice
+      ticketPrice = event.ticketPrice || 0;
+      console.log(`💰 Using event ticket price: $${ticketPrice}`);
+    }
+    
+    console.log(`🎫 Creating ${quantity} tickets at $${ticketPrice} each`);
+    
+    // Create ticket(s) with enhanced information
     const tickets = [];
     for (let i = 0; i < quantity; i++) {
+      // Generate unique ticket number manually (since insertMany doesn't trigger pre-save middleware)
+      const year = new Date().getFullYear();
+      const randomNum = Math.random().toString(36).substr(2, 8).toUpperCase();
+      const ticketNumber = `TCK-${year}-${randomNum}`;
+      
+      // Generate unique QR code data for each ticket
+      const qrData = {
+        eventId: eventId,
+        userId: req.dbUser._id,
+        ticketType: ticketType || 'General Admission',
+        timestamp: Date.now(),
+        ticketIndex: i + 1
+      };
+      
+      const qrString = Buffer.from(JSON.stringify(qrData)).toString('base64');
+      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrString)}`;
+      
       const ticket = new Ticket({
         event: eventId,
         user: req.dbUser._id,
-        ticketType: ticketType || 'General Admission',
-        price: event.ticketPrice || 0,
+        ticketNumber: ticketNumber, // Set ticket number manually
+        ticketType: selectedTicketType,
+        price: ticketPrice, // Use the correct ticket price
+        quantity: 1, // Each ticket represents 1 admission
         status: 'confirmed',
-        purchaseDate: new Date()
+        purchaseDate: new Date(),
+        paymentMethod: ticketPrice > 0 ? 'card' : 'free', // Set payment method based on price
+        paymentStatus: 'completed',
+        qrCode: qrCodeUrl, // Generate QR code immediately
+        metadata: {
+          registrationSource: 'web',
+          userAgent: req.get('User-Agent'),
+          ipAddress: req.ip
+        }
       });
       tickets.push(ticket);
     }
     
     const savedTickets = await Ticket.insertMany(tickets);
     console.log(`✅ Created ${savedTickets.length} tickets`);
+    console.log(`📋 Ticket numbers: ${savedTickets.map(t => t.ticketNumber).join(', ')}`);
 
     // Add user to event attendees
     event.attendees.push({
       user: req.dbUser._id,
-      ticketType: ticketType || 'General Admission',
+      ticketType: selectedTicketType,
       purchaseDate: new Date(),
       checkedIn: false
     });
@@ -608,39 +707,44 @@ router.post('/:id/register', checkJwt, checkUser, async (req, res) => {
     
     console.log(`📧 Sending registration confirmation to: ${user.email}`);
     console.log(`⚙️ User preferences:`, user.preferences);
+    
+    // Send notification using the new notification service
+    try {
+      await notificationService.sendEventRegistrationConfirmation(
+        req.dbUser._id,
+        eventId,
+        savedTickets[0]._id
+      );
+      console.log(`✅ Registration confirmation notification sent to ${user.email}`);
+    } catch (error) {
+      console.error(`❌ Failed to send notification:`, error);
+    }
         
-    // Send confirmation email
+    // Legacy email sending (keeping for backward compatibility)
     if (user.preferences?.notifications?.email !== false) {
       try {
         await emailService.sendEventConfirmation(user, event);
-        console.log(`✅ Registration confirmation email sent to ${user.email}`);
+        console.log(`✅ Legacy registration confirmation email sent to ${user.email}`);
       } catch (error) {
-        console.error(`❌ Failed to send confirmation email:`, error);
+        console.error(`❌ Failed to send legacy confirmation email:`, error);
       }
-    } else {
-      console.log(`📧 Email notifications disabled for ${user.email}`);
     }
         
-    // Send confirmation SMS
+    // Legacy SMS sending (keeping for backward compatibility)
     if (user.preferences?.notifications?.sms === true && user.phone) {
       try {
         await smsService.sendEventConfirmation(user, event);
-        console.log(`✅ Registration confirmation SMS sent to ${user.phone}`);
+        console.log(`✅ Legacy registration confirmation SMS sent to ${user.phone}`);
       } catch (error) {
-        console.error(`❌ Failed to send confirmation SMS:`, error);
-      }
-    } else {
-      if (!user.preferences?.notifications?.sms) {
-        console.log(`📱 SMS notifications disabled for ${user.email}`);
-      }
-      if (!user.phone) {
-        console.log(`📱 No phone number available for ${user.email}`);
+        console.error(`❌ Failed to send legacy confirmation SMS:`, error);
       }
     }
     
     res.status(201).json({ 
       message: 'Registration successful', 
       tickets: savedTickets,
+      totalPrice: ticketPrice * quantity,
+      pricePerTicket: ticketPrice,
       event: {
         title: event.title,
         date: event.date,
@@ -653,21 +757,64 @@ router.post('/:id/register', checkJwt, checkUser, async (req, res) => {
   }
 });
 
-// TEST REGISTRATION ENDPOINT (remove in production)
-router.post('/test-register/:id', checkJwt, checkUser, async (req, res) => {
+
+
+// Get event attendees (for organizers)
+router.get('/:id/attendees', checkJwt, checkUser, authorize('organizer', 'admin'), async (req, res) => {
   try {
-    console.log('🧪 === TEST REGISTRATION ENDPOINT ===');
-    console.log('JWT auth info:', req.auth);
+    const eventId = req.params.id;
+    const event = await Event.findById(eventId)
+      .populate('attendees.user', 'name email phone')
+      .populate('organizer', 'name email');
     
-    // Get the real user from the database using auth0Id
-    const realUser = await User.findOne({ auth0Id: req.auth.sub });
-    if (!realUser) {
-      return res.status(404).json({ message: 'User not found in database' });
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found' });
     }
     
-    console.log('Real user:', realUser.email);
-    console.log('Event ID:', req.params.id);
+    // Check if user is organizer or admin
+    if (req.dbUser.role !== 'admin' && event.organizer._id.toString() !== req.dbUser._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to view attendees' });
+    }
     
+    // Get tickets for this event with user details
+    const tickets = await Ticket.find({ event: eventId })
+      .populate('user', 'name email phone')
+      .sort({ purchaseDate: -1 });
+    
+    res.json({
+      event: {
+        id: event._id,
+        title: event.title,
+        date: event.date,
+        location: event.location,
+        capacity: event.capacity
+      },
+      attendees: tickets.map(ticket => ({
+        ticketId: ticket._id,
+        ticketNumber: ticket.ticketNumber,
+        user: ticket.user,
+        ticketType: ticket.ticketType,
+        purchaseDate: ticket.purchaseDate,
+        status: ticket.status,
+        checkedIn: ticket.status === 'used',
+        checkInDate: ticket.checkInDate
+      })),
+      stats: {
+        totalAttendees: tickets.length,
+        checkedIn: tickets.filter(t => t.status === 'used').length,
+        capacity: event.capacity,
+        occupancyRate: ((tickets.length / event.capacity) * 100).toFixed(1)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching event attendees:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get single event analytics (for organizers)
+router.get('/:id/analytics', checkJwt, checkUser, authorize('organizer', 'admin'), async (req, res) => {
+  try {
     const eventId = req.params.id;
     const event = await Event.findById(eventId).populate('organizer', 'name email');
     
@@ -675,73 +822,154 @@ router.post('/test-register/:id', checkJwt, checkUser, async (req, res) => {
       return res.status(404).json({ message: 'Event not found' });
     }
     
-    console.log('Event found:', event.title);
-    
-    // Check if user is already registered
-    const existingTicket = await Ticket.findOne({
-      event: eventId,
-      user: realUser._id
-    });
-    
-    if (existingTicket) {
-      return res.status(400).json({ message: 'Already registered' });
+    // Check if user is organizer or admin
+    if (req.dbUser.role !== 'admin' && event.organizer._id.toString() !== req.dbUser._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to view analytics' });
     }
     
-    // Force create a test ticket
-    const ticket = new Ticket({
-      event: eventId,
-      user: realUser._id,
-      ticketType: 'Test Ticket',
-      price: 0,
-      status: 'confirmed',
-      purchaseDate: new Date()
-    });
+    // Get tickets for this event
+    const tickets = await Ticket.find({ event: eventId });
     
-    await ticket.save();
-    console.log('✅ Test ticket created:', ticket._id);
+    // Calculate detailed analytics
+    const totalTicketsSold = tickets.length;
+    const totalRevenue = tickets.reduce((sum, ticket) => sum + (ticket.price || 0), 0);
+    const checkedInCount = tickets.filter(t => t.status === 'used').length;
+    const cancelledCount = tickets.filter(t => t.status === 'cancelled').length;
     
-    // Add user to event attendees
-    event.attendees.push({
-      user: realUser._id,
-      ticketType: 'Test Ticket',
-      purchaseDate: new Date(),
-      checkedIn: false
-    });
-    
-    await event.save();
-    console.log('✅ User added to event attendees');
-    
-    // Send confirmation email
-    if (realUser.preferences?.notifications?.email !== false) {
-      try {
-        await emailService.sendEventConfirmation(realUser, event);
-        console.log(`✅ Test confirmation email sent to ${realUser.email}`);
-      } catch (error) {
-        console.error(`❌ Failed to send test email:`, error);
-      }
+    // Registration trends (last 7 days)
+    const last7Days = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dayStart = new Date(date.setHours(0, 0, 0, 0));
+      const dayEnd = new Date(date.setHours(23, 59, 59, 999));
+      
+      const dayTickets = tickets.filter(t => 
+        new Date(t.purchaseDate) >= dayStart && new Date(t.purchaseDate) <= dayEnd
+      );
+      
+      last7Days.push({
+        date: dayStart.toISOString().split('T')[0],
+        registrations: dayTickets.length,
+        revenue: dayTickets.reduce((sum, ticket) => sum + (ticket.price || 0), 0)
+      });
     }
     
-    // Send confirmation SMS
-    if (realUser.preferences?.notifications?.sms === true && realUser.phone) {
-      try {
-        await smsService.sendEventConfirmation(realUser, event);
-        console.log(`✅ Test confirmation SMS sent to ${realUser.phone}`);
-      } catch (error) {
-        console.error(`❌ Failed to send test SMS:`, error);
-      }
-    }
-    
-    res.json({ 
-      message: 'Test registration successful', 
-      ticket,
-      notifications: {
-        emailSent: realUser.preferences?.notifications?.email !== false,
-        smsSent: realUser.preferences?.notifications?.sms === true && !!realUser.phone
-      }
+    res.json({
+      event: {
+        id: event._id,
+        title: event.title,
+        date: event.date,
+        status: event.status,
+        capacity: event.capacity
+      },
+      summary: {
+        totalTicketsSold,
+        totalRevenue,
+        checkedInCount,
+        cancelledCount,
+        occupancyRate: ((totalTicketsSold / event.capacity) * 100).toFixed(1),
+        checkInRate: totalTicketsSold > 0 ? ((checkedInCount / totalTicketsSold) * 100).toFixed(1) : 0
+      },
+      trends: {
+        last7Days,
+        peakRegistrationDay: last7Days.reduce((peak, day) => 
+          day.registrations > peak.registrations ? day : peak, last7Days[0])
+      },
+      ticketTypes: tickets.reduce((acc, ticket) => {
+        const type = ticket.ticketType || 'General';
+        if (!acc[type]) {
+          acc[type] = { count: 0, revenue: 0 };
+        }
+        acc[type].count++;
+        acc[type].revenue += ticket.price || 0;
+        return acc;
+      }, {})
     });
   } catch (error) {
-    console.error('Test registration error:', error);
-    res.status(500).json({ message: 'Test failed', error: error.message });
+    console.error('Error fetching event analytics:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get event calendar (ICS format)
+router.get('/:id/calendar', async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id)
+      .populate('organizer', 'name email');
+    
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found' });
+    }
+    
+    // Generate ICS file content
+    const startDate = new Date(event.date);
+    const endDate = new Date(startDate.getTime() + (2 * 60 * 60 * 1000)); // Default 2 hours duration
+    
+    const formatDate = (date) => {
+      return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    };
+
+    const icsContent = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//EventCraft//EventCraft Calendar//EN
+BEGIN:VEVENT
+UID:${event._id}@eventcraft.com
+DTSTAMP:${formatDate(new Date())}
+DTSTART:${formatDate(startDate)}
+DTEND:${formatDate(endDate)}
+SUMMARY:${event.title}
+DESCRIPTION:${event.description || ''}
+LOCATION:${event.location || ''}
+ORGANIZER:CN=${event.organizer?.name || 'EventCraft'}:MAILTO:${event.organizer?.email || 'noreply@eventcraft.com'}
+STATUS:CONFIRMED
+SEQUENCE:0
+END:VEVENT
+END:VCALENDAR`;
+
+    res.set({
+      'Content-Type': 'text/calendar',
+      'Content-Disposition': `attachment; filename="${event.title.replace(/\s+/g, '-')}.ics"`
+    });
+    
+    res.json({
+      icsFile: icsContent,
+      filename: `${event.title.replace(/\s+/g, '-')}.ics`
+    });
+  } catch (error) {
+    console.error('Error generating calendar file:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get event capacity information
+router.get('/:id/capacity', async (req, res) => {
+  try {
+    const eventId = req.params.id;
+    const event = await Event.findById(eventId);
+    
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found' });
+    }
+    
+    // Count actual tickets sold
+    const ticketsSold = await Ticket.countDocuments({ event: eventId });
+    
+    // Count attendees in event.attendees array for comparison
+    const attendeesCount = event.attendees ? event.attendees.length : 0;
+    
+    res.json({
+      eventId: event._id,
+      eventTitle: event.title,
+      capacity: event.capacity,
+      ticketsSold: ticketsSold,
+      attendeesInArray: attendeesCount,
+      available: event.capacity - ticketsSold,
+      occupancyRate: ((ticketsSold / event.capacity) * 100).toFixed(1) + '%'
+    });
+  } catch (error) {
+    console.error('Error fetching event capacity:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
