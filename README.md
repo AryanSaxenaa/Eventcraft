@@ -26,6 +26,7 @@ EventCraft is an event management platform with role-based access for attendees,
 ```
 
 ## How It Works
+![WhatsApp Image 2025-07-01 at 13 32 51_61c0d2f7](https://github.com/user-attachments/assets/1696a8d4-465d-46fc-a69e-d6ae130a05e6)
 
 ### Authentication Flow
 1. User logs in via Auth0
@@ -193,3 +194,4 @@ For testing without sending actual emails/SMS:
 3. **Opt-in/out**: Always provide users the ability to opt out of notifications
 4. **Queuing**: For high-volume applications, use a message queue system
 5. **Error Handling**: Implement comprehensive error handling and retry logic
+
